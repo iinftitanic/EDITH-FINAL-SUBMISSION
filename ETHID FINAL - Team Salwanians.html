@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EDITH OS - Even Dead, I Am The Hero</title>
+    
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+
+    <style>
+        :root {
+            --glass: rgba(20, 20, 25, 0.7);
+            --border: rgba(255, 255, 255, 0.1);
+            --accent: #00d2ff;
+            --accent-glow: rgba(0, 210, 255, 0.5);
+            --text: #ffffff;
+            --bg-url: url('https://images.unsplash.com/photo-1614850523296-d8c1af93d400?ixlib=rb-4.0.3&auto=format&fit=crop&w=1920&q=80');
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; }
+        
+        body, html { height: 100vh; width: 100vw; overflow: hidden; background: #000; color: var(--text); }
+
+        #boot-screen {
+            position: fixed; inset: 0; background: #000; z-index: 10001;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            transition: opacity 1s ease;
+        }
+        .arc-reactor {
+            width: 100px; height: 100px; border-radius: 50%;
+            border: 4px solid var(--accent);
+            box-shadow: 0 0 20px var(--accent-glow), inset 0 0 20px var(--accent-glow);
+            animation: pulse 2s infinite linear;
+        }
+        @keyframes pulse { 0% { transform: scale(1); opacity: 0.5; } 50% { transform: scale(1.1); opacity: 1; } 100% { transform: scale(1); opacity: 0.5; } }
+
+        #login-screen {
+            position: fixed; inset: 0; z-index: 10000; background: rgba(0,0,0,0.85);
+            backdrop-filter: blur(20px); display: none; flex-direction: column; align-items: center; justify-content: center;
+        }
+        .login-card {
+            background: var(--glass); padding: 40px; border-radius: 24px;
+            border: 1px solid var(--border); text-align: center; width: 350px;
+        }
+        .login-input {
+            width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--border);
+            padding: 12px; border-radius: 8px; color: white; margin-bottom: 15px; outline: none;
+        }
+        .login-btn {
+            width: 100%; padding: 12px; background: var(--accent); border: none; border-radius: 8px;
+            color: black; font-weight: bold; cursor: pointer; transition: 0.3s; margin-bottom: 10px;
+        }
+        .google-btn {
+            width: 100%; padding: 12px; background: white; border: none; border-radius: 8px;
+            color: #444; font-weight: bold; cursor: pointer; transition: 0.3s; display: flex; align-items: center; justify-content: center; gap: 10px;
+        }
+        .login-btn:hover, .google-btn:hover { transform: scale(1.02); box-shadow: 0 0 15px var(--accent); }
+
+        #desktop {
+            width: 100%; height: 100%;
+            background: var(--bg-url) center/cover no-repeat;
+            position: relative;
+            display: none; flex-direction: column;
+        }
+
+        .glass { backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); background: var(--glass); border: 1px solid var(--border); }
+
+        #window-container { flex: 1; position: relative; width: 100%; }
+
+        .desktop-icons {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, 100px);
+            grid-template-rows: repeat(auto-fill, 100px);
+            gap: 20px;
+            z-index: 5;
+        }
+
+        .desktop-app {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            width: 90px;
+            height: 90px;
+            cursor: pointer;
+            border-radius: 8px;
+            transition: background 0.2s;
+        }
+
+        .desktop-app:hover { background: rgba(255, 255, 255, 0.1); }
+        .desktop-app span { font-size: 11px; margin-top: 8px; text-shadow: 0 2px 4px rgba(0,0,0,0.8); text-align: center; }
+
+        .window {
+            position: absolute; min-width: 300px; min-height: 200px;
+            border-radius: 12px; overflow: hidden; display: flex; flex-direction: column;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5); z-index: 10;
+        }
+
+        .window-header {
+            height: 40px; background: rgba(255,255,255,0.05);
+            display: flex; align-items: center; padding: 0 15px; cursor: move;
+        }
+
+        .window-title { flex: 1; font-size: 13px; font-weight: 600; letter-spacing: 0.5px; }
+
+        .window-controls { display: flex; gap: 8px; }
+        .control { width: 12px; height: 12px; border-radius: 50%; cursor: pointer; }
+        .close { background: #ff5f56; }
+        .min { background: #ffbd2e; }
+        .max { background: #27c93f; }
+
+        .window-content { flex: 1; overflow: auto; background: rgba(10, 10, 12, 0.6); position: relative; }
+
+        #taskbar {
+            height: 55px; width: 100%; display: flex; align-items: center;
+            padding: 0 15px; gap: 10px; z-index: 9999; border-top: 1px solid var(--border);
+        }
+
+        .taskbar-item {
+            width: 42px; height: 42px; display: flex; align-items: center; justify-content: center;
+            border-radius: 8px; cursor: pointer; transition: 0.2s; position: relative;
+        }
+        .taskbar-item:hover { background: rgba(255,255,255,0.1); }
+        .taskbar-item.active::after {
+            content: ''; position: absolute; bottom: 2px; width: 18px; height: 3px;
+            background: var(--accent); border-radius: 2px; box-shadow: 0 0 10px var(--accent);
+        }
+
+        #start-btn { color: var(--accent); }
+
+        .taskbar-spacer { flex: 1; }
+        .sys-tray { font-size: 13px; font-weight: 500; padding: 0 10px; }
+
+        #start-menu {
+            position: absolute; bottom: 65px; left: 15px; width: 400px; height: 500px;
+            border-radius: 15px; z-index: 9998; padding: 25px;
+            transform: translateY(20px); opacity: 0; pointer-events: none; transition: 0.3s;
+        }
+        #start-menu.open { transform: translateY(0); opacity: 1; pointer-events: all; }
+
+        .app-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-top: 20px; }
+        .app-icon {
+            display: flex; flex-direction: column; align-items: center; gap: 8px;
+            cursor: pointer; padding: 10px; border-radius: 10px; transition: 0.2s;
+        }
+        .app-icon:hover { background: rgba(255,255,255,0.1); }
+        .app-icon span { font-size: 11px; text-align: center; }
+
+        .full-h { height: 100%; display: flex; flex-direction: column; }
+        input, textarea, button { 
+            background: rgba(255,255,255,0.05); border: 1px solid var(--border); 
+            color: white; padding: 8px 12px; border-radius: 5px; outline: none;
+        }
+        button { cursor: pointer; background: var(--accent); color: black; font-weight: 600; border: none; }
+        button:hover { opacity: 0.8; }
+
+        .chat-area { flex: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 10px; }
+        .msg { padding: 10px; border-radius: 10px; max-width: 80%; font-size: 13px; }
+        .msg.me { align-self: flex-end; background: var(--accent); color: #000; }
+        .msg.other { align-self: flex-start; background: rgba(255,255,255,0.1); }
+
+        .editor-container { display: grid; grid-template-columns: 1fr 1fr; height: 100%; }
+        .code-input { font-family: 'Consolas', monospace; font-size: 14px; background: #000; color: #0f0; resize: none; border: none; padding: 15px; }
+        .preview-pane { background: white; border: none; width: 100%; height: 100%; }
+
+        .calc-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; padding: 15px; }
+        .calc-display { height: 60px; font-size: 24px; text-align: right; padding: 10px; background: #000; color: var(--accent); border: none; }
+
+        .camera-stream { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+
+        .settings-pane { padding: 20px; display: flex; flex-direction: column; gap: 15px; }
+        .vfs-item { padding: 10px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--border); cursor: pointer; }
+        
+        .hidden { display: none; }
+        .resizer { position: absolute; width: 15px; height: 15px; right: 0; bottom: 0; cursor: nwse-resize; }
+    </style>
+</head>
+<body>
+
+<div id="boot-screen">
+    <div class="arc-reactor"></div>
+    <h2 style="font-family: 'Segoe UI'; margin-top: 20px; letter-spacing: 5px; color: var(--accent)">EDITH</h2>
+    <p style="font-size: 10px; margin-top: 10px; opacity: 0.5;">INITIALIZING HUD SYSTEM...</p>
+</div>
+
+<div id="login-screen">
+    <div class="login-card">
+        <h1 style="color: var(--accent); margin-bottom: 20px; font-size: 24px;">WELCOME BACK</h1>
+        <input type="text" id="username" class="login-input" placeholder="Identity (e.g. Tony Stark)">
+        <input type="password" id="password" class="login-input" placeholder="Passcode">
+        <button class="login-btn" onclick="OS.auth.login()">AUTHORIZE</button>
+        <button class="google-btn" onclick="OS.auth.googleLogin()">
+            <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" width="18"> SIGN IN WITH GOOGLE
+        </button>
+    </div>
+</div>
+
+<div id="desktop">
+    <div class="desktop-icons" id="desktop-grid"></div>
+    <div id="window-container"></div>
+
+    <div id="start-menu" class="glass">
+        <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 20px;">
+            <img id="user-avatar" src="https://api.dicebear.com/7.x/avataaars/svg?seed=Tony" style="width: 45px; border-radius: 50%; border: 2px solid var(--accent);">
+            <div>
+                <div id="user-display-name" style="font-weight: 600;">Tony Stark</div>
+                <div style="font-size: 12px; opacity: 0.6;">System Admin</div>
+            </div>
+        </div>
+        <input type="text" placeholder="Search applications..." style="width: 100%; margin-bottom: 10px;">
+        <div class="app-grid" id="app-launcher"></div>
+    </div>
+
+    <div id="taskbar" class="glass">
+        <div id="start-btn" class="taskbar-item"><i data-lucide="layout-grid"></i></div>
+        <div id="running-apps" style="display: flex; gap: 8px;"></div>
+        <div class="taskbar-spacer"></div>
+        <div class="sys-tray" id="clock">00:00:00</div>
+    </div>
+</div>
+
+<script>
+const APPS = {
+    ai: { name: "EDITH AI", icon: "cpu", color: "#9b59b6" },
+    chat: { name: "Social", icon: "message-circle", color: "#00d2ff" },
+    editor: { name: "AI Editor", icon: "code", color: "#e67e22" },
+    explorer: { name: "Files", icon: "folder", color: "#f1c40f" },
+    browser: { name: "Browser", icon: "globe", color: "#3498db" },
+    notes: { name: "Notes", icon: "file-text", color: "#fff" },
+    todo: { name: "To-Do", icon: "check-circle", color: "#2ecc71" },
+    calc: { name: "Scientific Calc", icon: "calculator", color: "#e74c3c" },
+    camera: { name: "Camera", icon: "camera", color: "#95a5a6" },
+    maps: { name: "Maps", icon: "map", color: "#e74c3c" },
+    settings: { name: "Settings", icon: "settings", color: "#888" }
+};
+
+const OS = {
+    user: "Tony",
+    state: {
+        processes: [],
+        zIndex: 1000,
+        activePid: null,
+        firebaseConfig: { 
+            apiKey: "AIzaSyDYpg_6soaRjGNrmYAUIVYxKMbP2_MqQ-o", 
+            authDomain: "edith-the-goat.firebaseapp.com", 
+            projectId: "edith-the-goat", 
+            storageBucket: "edith-the-goat.firebasestorage.app", 
+            messagingSenderId: "420062595621", 
+            appId: "1:420062595621:web:3827689c1703fba9f60dcc", 
+            measurementId: "G-S9E562VHMP",
+            databaseURL: "https://edith-the-goat-default-rtdb.firebaseio.com" 
+        },
+        geminiKey: localStorage.getItem('edith_gemini') || '',
+        bgUrl: localStorage.getItem('edith_bg') || 'https://images.unsplash.com/photo-1614850523296-d8c1af93d400?ixlib=rb-4.0.3&auto=format&fit=crop&w=1920&q=80'
+    },
+
+    boot() {
+        document.documentElement.style.setProperty('--bg-url', `url('${this.state.bgUrl}')`);
+
+        setTimeout(() => {
+            document.getElementById('boot-screen').style.opacity = '0';
+            setTimeout(() => {
+                document.getElementById('boot-screen').style.display = 'none';
+                document.getElementById('login-screen').style.display = 'flex';
+            }, 1000);
+        }, 2500);
+
+        this.renderStartMenu();
+        this.renderDesktopIcons();
+        this.initClock();
+        this.initFirebase();
+        lucide.createIcons();
+        
+        document.getElementById('desktop').addEventListener('mousedown', (e) => {
+            if(e.target.id === 'window-container') {
+                this.state.activePid = null;
+                this.updateTaskbar();
+                document.getElementById('start-menu').classList.remove('open');
+            }
+        });
+
+        document.getElementById('start-btn').onclick = (e) => {
+            e.stopPropagation();
+            document.getElementById('start-menu').classList.toggle('open');
+        };
+    },
+
+    auth: {
+        login() {
+            const user = document.getElementById('username').value || 'Tony';
+            this.enterDesktop(user);
+        },
+        googleLogin() {
+            const provider = new firebase.auth.GoogleAuthProvider();
+            firebase.auth().signInWithPopup(provider).then((result) => {
+                const user = result.user;
+                document.getElementById('user-avatar').src = user.photoURL;
+                this.enterDesktop(user.displayName);
+            }).catch((error) => {
+                alert("Auth failed: " + error.message);
+            });
+        },
+        enterDesktop(name) {
+            OS.user = name;
+            document.getElementById('user-display-name').innerText = name;
+            document.getElementById('login-screen').style.opacity = '0';
+            setTimeout(() => {
+                document.getElementById('login-screen').style.display = 'none';
+                document.getElementById('desktop').style.display = 'flex';
+            }, 500);
+        }
+    },
+
+    initClock() {
+        const el = document.getElementById('clock');
+        setInterval(() => {
+            el.innerText = new Date().toLocaleTimeString();
+        }, 1000);
+    },
+
+    renderDesktopIcons() {
+        const container = document.getElementById('desktop-grid');
+        Object.keys(APPS).forEach(id => {
+            const app = APPS[id];
+            const div = document.createElement('div');
+            div.className = 'desktop-app';
+            div.innerHTML = `<i data-lucide="${app.icon}" style="color:${app.color}; width: 32px; height: 32px;"></i><span>${app.name}</span>`;
+            div.onclick = () => this.launch(id);
+            container.appendChild(div);
+        });
+    },
+
+    renderStartMenu() {
+        const container = document.getElementById('app-launcher');
+        Object.keys(APPS).forEach(id => {
+            const app = APPS[id];
+            const div = document.createElement('div');
+            div.className = 'app-icon';
+            div.innerHTML = `<i data-lucide="${app.icon}" style="color:${app.color}"></i><span>${app.name}</span>`;
+            div.onclick = () => this.launch(id);
+            container.appendChild(div);
+        });
+    },
+
+    launch(appId) {
+        const pid = Math.random().toString(36).substr(2, 9);
+        const app = APPS[appId];
+        
+        const win = document.createElement('div');
+        win.className = 'window glass';
+        win.id = `win-${pid}`;
+        win.style.width = '700px';
+        win.style.height = '450px';
+        win.style.left = '150px';
+        win.style.top = '100px';
+        win.style.zIndex = ++this.state.zIndex;
+
+        win.innerHTML = `
+            <div class="window-header" onmousedown="OS.focus('${pid}')">
+                <div class="window-title"><i data-lucide="${app.icon}" style="width:14px; height:14px; vertical-align: middle; margin-right:5px;"></i> ${app.name}</div>
+                <div class="window-controls">
+                    <div class="control min" onclick="OS.minimize('${pid}')"></div>
+                    <div class="control max" onclick="OS.maximize('${pid}')"></div>
+                    <div class="control close" onclick="OS.kill('${pid}')"></div>
+                </div>
+            </div>
+            <div class="window-content" id="content-${pid}"></div>
+            <div class="resizer"></div>
+        `;
+
+        document.getElementById('window-container').appendChild(win);
+        this.state.processes.push({ pid, appId, win });
+        this.state.activePid = pid;
+        
+        this.renderAppContent(appId, pid);
+        this.makeDraggable(win, pid);
+        this.makeResizable(win);
+        this.updateTaskbar();
+        lucide.createIcons();
+        document.getElementById('start-menu').classList.remove('open');
+    },
+
+    focus(pid) {
+        const proc = this.state.processes.find(p => p.pid === pid);
+        if(proc) {
+            proc.win.style.zIndex = ++this.state.zIndex;
+            this.state.activePid = pid;
+            this.updateTaskbar();
+        }
+    },
+
+    kill(pid) {
+        const proc = this.state.processes.find(p => p.pid === pid);
+        if(proc) {
+            proc.win.remove();
+            this.state.processes = this.state.processes.filter(p => p.pid !== pid);
+            this.updateTaskbar();
+        }
+    },
+
+    minimize(pid) {
+        const proc = this.state.processes.find(p => p.pid === pid);
+        proc.win.classList.toggle('hidden');
+    },
+
+    maximize(pid) {
+        const win = document.getElementById(`win-${pid}`);
+        if(win.style.width === '100%') {
+            win.style.width = '700px'; win.style.height = '450px'; win.style.top = '100px'; win.style.left = '150px';
+        } else {
+            win.style.width = '100%'; win.style.height = 'calc(100% - 55px)'; win.style.top = '0'; win.style.left = '0';
+        }
+    },
+
+    updateTaskbar() {
+        const container = document.getElementById('running-apps');
+        container.innerHTML = '';
+        this.state.processes.forEach(p => {
+            const app = APPS[p.appId];
+            const div = document.createElement('div');
+            div.className = `taskbar-item ${this.state.activePid === p.pid ? 'active' : ''}`;
+            div.innerHTML = `<i data-lucide="${app.icon}" style="color:${app.color}"></i>`;
+            div.onclick = () => {
+                p.win.classList.remove('hidden');
+                this.focus(p.pid);
+            };
+            container.appendChild(div);
+        });
+        lucide.createIcons();
+    },
+
+    makeDraggable(win, pid) {
+        const header = win.querySelector('.window-header');
+        let x = 0, y = 0, nx = 0, ny = 0;
+        header.onmousedown = (e) => {
+            this.focus(pid);
+            x = e.clientX; y = e.clientY;
+            document.onmousemove = (e) => {
+                nx = x - e.clientX; ny = y - e.clientY;
+                x = e.clientX; y = e.clientY;
+                win.style.top = (win.offsetTop - ny) + "px";
+                win.style.left = (win.offsetLeft - nx) + "px";
+            };
+            document.onmouseup = () => { document.onmousemove = null; };
+        };
+    },
+
+    makeResizable(win) {
+        const resizer = win.querySelector('.resizer');
+        resizer.onmousedown = (e) => {
+            let sx = e.clientX, sy = e.clientY, sw = win.offsetWidth, sh = win.offsetHeight;
+            document.onmousemove = (e) => {
+                win.style.width = sw + (e.clientX - sx) + 'px';
+                win.style.height = sh + (e.clientY - sy) + 'px';
+            };
+            document.onmouseup = () => { document.onmousemove = null; };
+        };
+    },
+
+    renderAppContent(appId, pid) {
+        const target = document.getElementById(`content-${pid}`);
+        switch(appId) {
+            case 'settings':
+                target.innerHTML = `
+                    <div class="settings-pane">
+                        <h3>System Configuration</h3>
+                        <div>
+                            <label>Gemini API Key</label>
+                            <input type="password" id="set-gemini" style="width:100%" value="${this.state.geminiKey}">
+                        </div>
+                        <div>
+                            <label>Desktop Wallpaper URL</label>
+                            <input type="text" id="set-bg" style="width:100%" value="${this.state.bgUrl}" placeholder="https://image-url.com/img.jpg">
+                        </div>
+                        <button onclick="OS.saveSettings('${pid}')">Apply Changes</button>
+                    </div>`;
+                break;
+            case 'ai':
+                target.innerHTML = `
+                    <div class="full-h">
+                        <div class="chat-area" id="ai-chat-${pid}"><div class="msg other">EDITH Online. Systems utilizing Gemini 2.0 Flash.</div></div>
+                        <div style="padding:10px; display:flex; gap:10px; border-top:1px solid var(--border);">
+                            <input type="text" id="ai-in-${pid}" style="flex:1" placeholder="Ask EDITH..." onkeydown="if(event.key==='Enter') OS.apps.askAI('${pid}')">
+                            <button onclick="OS.apps.askAI('${pid}')">Send</button>
+                        </div>
+                    </div>`;
+                break;
+            case 'editor':
+                target.innerHTML = `
+                    <div class="editor-container">
+                        <textarea class="code-input" id="code-${pid}" oninput="OS.apps.runCode('${pid}')"><h1>Hello World</h1><style>body{color:cyan; background:#111;}</style></textarea>
+                        <iframe id="preview-${pid}" class="preview-pane"></iframe>
+                    </div>`;
+                this.apps.runCode(pid);
+                break;
+            case 'calc':
+                target.innerHTML = `
+                    <div class="full-h">
+                        <input type="text" class="calc-display" id="calc-val-${pid}" readonly value="0">
+                        <div class="calc-grid">
+                            ${['7','8','9','/','4','5','6','*','1','2','3','-','0','.','C','='].map(k => `<button onclick="OS.apps.doCalc('${pid}','${k}')">${k}</button>`).join('')}
+                        </div>
+                    </div>`;
+                break;
+            case 'browser':
+                target.innerHTML = `<iframe src="https://www.wikipedia.org" style="width:100%; height:100%; border:none; background:white;"></iframe>`;
+                break;
+            case 'notes':
+                const saved = localStorage.getItem('edith_notes') || '';
+                target.innerHTML = `<textarea style="width:100%; height:100%; padding:20px; background:transparent; border:none; color:white; font-size:16px;" oninput="localStorage.setItem('edith_notes', this.value)">${saved}</textarea>`;
+                break;
+            case 'todo':
+                target.innerHTML = `
+                    <div class="full-h" style="padding:20px;">
+                        <div style="display:flex; gap:10px;">
+                            <input type="text" id="todo-in-${pid}" style="flex:1">
+                            <button onclick="OS.apps.addTodo('${pid}')">Add</button>
+                        </div>
+                        <div id="todo-list-${pid}" style="margin-top:20px;"></div>
+                    </div>`;
+                this.apps.renderTodos(pid);
+                break;
+            case 'camera':
+                target.innerHTML = `<video id="video-${pid}" class="camera-stream" autoplay></video>
+                <div style="position:absolute; bottom:10px; left:50%; transform:translateX(-50%); display:flex; gap:10px;">
+                    <button onclick="document.getElementById('video-${pid}').style.filter='grayscale(1)'">B&W</button>
+                    <button onclick="document.getElementById('video-${pid}').style.filter='none'">Reset</button>
+                </div>`;
+                navigator.mediaDevices.getUserMedia({video:true}).then(s => document.getElementById(`video-${pid}`).srcObject = s);
+                break;
+            case 'maps':
+                target.innerHTML = `<iframe width="100%" height="100%" src="https://maps.google.com/maps?output=embed&q=Stark+Tower+NY"></iframe>`;
+                break;
+            case 'explorer':
+                target.innerHTML = `
+                    <div class="full-h" style="padding:15px;">
+                        <div class="vfs-item"><i data-lucide="folder"></i> Documents</div>
+                        <div class="vfs-item"><i data-lucide="file"></i> system_log.txt</div>
+                    </div>`;
+                lucide.createIcons();
+                break;
+            case 'chat':
+                target.innerHTML = `
+                    <div class="full-h">
+                        <div class="chat-area" id="chat-box-${pid}"></div>
+                        <div style="padding:10px; display:flex; gap:10px; border-top:1px solid var(--border);">
+                            <input type="text" id="chat-in-${pid}" style="flex:1" placeholder="Global broadcast..." onkeydown="if(event.key==='Enter') OS.apps.sendChat('${pid}')">
+                            <button onclick="OS.apps.sendChat('${pid}')">Send</button>
+                        </div>
+                    </div>`;
+                this.apps.listenChat(pid);
+                break;
+        }
+    },
+
+    saveSettings(pid) {
+        const key = document.getElementById('set-gemini').value;
+        const bg = document.getElementById('set-bg').value;
+        localStorage.setItem('edith_gemini', key);
+        localStorage.setItem('edith_bg', bg);
+        alert("Settings Saved. Refreshing Core...");
+        location.reload();
+    },
+
+    initFirebase() {
+        if(this.state.firebaseConfig) {
+            try {
+                firebase.initializeApp(this.state.firebaseConfig);
+                this.db = firebase.database();
+            } catch(e) { console.error("Firebase Connection Error"); }
+        }
+    },
+
+    apps: {
+        async askAI(pid) {
+            const input = document.getElementById(`ai-in-${pid}`);
+            const box = document.getElementById(`ai-chat-${pid}`);
+            const text = input.value;
+            if(!text) return;
+
+            box.innerHTML += `<div class="msg me">${text}</div>`;
+            input.value = '';
+
+            if(!OS.state.geminiKey) {
+                box.innerHTML += `<div class="msg other">Boss, I need a Gemini API Key in Settings to function.</div>`;
+                return;
+            }
+
+            try {
+                const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${OS.state.geminiKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ contents: [{ parts: [{ text: text }] }] })
+                });
+                const data = await res.json();
+                const aiText = data.candidates[0].content.parts[0].text;
+                box.innerHTML += `<div class="msg other">${aiText}</div>`;
+            } catch(e) {
+                box.innerHTML += `<div class="msg other">Connection failure. AI core offline.</div>`;
+            }
+            box.scrollTop = box.scrollHeight;
+        },
+
+        runCode(pid) {
+            const code = document.getElementById(`code-${pid}`).value;
+            const iframe = document.getElementById(`preview-${pid}`);
+            iframe.srcdoc = code;
+        },
+
+        doCalc(pid, key) {
+            const disp = document.getElementById(`calc-val-${pid}`);
+            if(key === '=') {
+                try { disp.value = eval(disp.value); } catch(e) { disp.value = 'Error'; }
+            } else if(key === 'C') {
+                disp.value = '0';
+            } else {
+                if(disp.value === '0') disp.value = key;
+                else disp.value += key;
+            }
+        },
+
+        renderTodos(pid) {
+            const list = document.getElementById(`todo-list-${pid}`);
+            const todos = JSON.parse(localStorage.getItem('edith_todos') || '[]');
+            list.innerHTML = todos.map((t, i) => `<div style="padding:10px; background:rgba(255,255,255,0.05); margin-bottom:5px; border-radius:5px;">${t}</div>`).join('');
+        },
+
+        addTodo(pid) {
+            const val = document.getElementById(`todo-in-${pid}`).value;
+            const todos = JSON.parse(localStorage.getItem('edith_todos') || '[]');
+            todos.push(val);
+            localStorage.setItem('edith_todos', JSON.stringify(todos));
+            document.getElementById(`todo-in-${pid}`).value = '';
+            this.renderTodos(pid);
+        },
+
+        sendChat(pid) {
+            const msg = document.getElementById(`chat-in-${pid}`).value;
+            if(OS.db && msg) {
+                OS.db.ref('chats').push({ user: OS.user, text: msg, time: Date.now() });
+                document.getElementById(`chat-in-${pid}`).value = '';
+            }
+        },
+
+        listenChat(pid) {
+            if(OS.db) {
+                OS.db.ref('chats').limitToLast(15).on('value', snap => {
+                    const box = document.getElementById(`chat-box-${pid}`);
+                    if(!box) return;
+                    box.innerHTML = '';
+                    snap.forEach(c => {
+                        const m = c.val();
+                        box.innerHTML += `<div class="msg ${m.user===OS.user?'me':'other'}"><b>${m.user}:</b> ${m.text}</div>`;
+                    });
+                    box.scrollTop = box.scrollHeight;
+                });
+            }
+        }
+    }
+};
+
+OS.boot();
+</script>
+
+</body>
+</html>
